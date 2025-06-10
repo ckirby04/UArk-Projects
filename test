@@ -78,3 +78,32 @@ with torch.no_grad():
     test_mae /= len(test_ds)
 
 print(f"\nTest MAE: {test_mae:.5f}")
+
+
+
+
+model.eval()
+with torch.no_grad():
+    val_mae = 0
+    val_mape = 0
+    within_10_percent = 0
+
+    for xb, yb in val_loader:
+        xb, yb = xb.to(device), yb.to(device)
+        preds = model(xb)
+
+        # MAE
+        val_mae += torch.abs(preds - yb).sum().item()
+
+        # MAPE (avoid division by zero)
+        mape = torch.abs((preds - yb) / (yb + 1e-8)) * 100
+        val_mape += mape.sum().item()
+
+        # Accuracy within 10%
+        within_10_percent += ((mape <= 10).squeeze()).sum().item()
+
+    val_mae /= len(val_ds)
+    val_mape /= len(val_ds)
+    acc_10 = within_10_percent / len(val_ds)
+
+    print(f"Epoch {epoch+1}: Train Loss = {total_loss:.4f}, Val MAE = {val_mae:.5f}, MAPE = {val_mape:.2f}%, Acc@10% = {acc_10:.2%}")
