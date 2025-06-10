@@ -1,0 +1,80 @@
+import numpy as np
+import torch
+import torch.nn as nn
+import torchvision.models as models
+from torch.utils.data import DataLoader, TensorDataset, random_split
+from sklearn.model_selection import train_test_split
+
+# Convert NumPy arrays to PyTorch tensors
+X_train_tensor = torch.tensor(X_train.transpose(0, 3, 1, 2), dtype=torch.float32)  # Shape: (N, 3, 345, 600)
+y_train_tensor = torch.tensor(y_train, dtype=torch.float32).view(-1, 1)
+
+# Normalize the input to [0, 1]
+X_train_tensor /= 255.0
+
+# Create dataset and split 70/20/10
+full_dataset = TensorDataset(X_train_tensor, y_train_tensor)
+train_size = int(0.7 * len(full_dataset))
+val_size = int(0.2 * len(full_dataset))
+test_size = len(full_dataset) - train_size - val_size
+
+train_ds, val_ds, test_ds = random_split(full_dataset, [train_size, val_size, test_size])
+train_loader = DataLoader(train_ds, batch_size=32, shuffle=True)
+val_loader = DataLoader(val_ds, batch_size=32)
+test_loader = DataLoader(test_ds, batch_size=32)
+
+# Define the model using ResNet18 backbone
+class ResNetRegressor(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.backbone = models.resnet18(weights=None)  # Set weights="IMAGENET1K_V1" for pretrained
+        self.backbone.fc = nn.Linear(self.backbone.fc.in_features, 1)  # Replace classifier with regression output
+
+    def forward(self, x):
+        return self.backbone(x)
+
+# Instantiate model, loss, and optimizer
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+model = ResNetRegressor().to(device)
+criterion = nn.MSELoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+
+# Training loop
+epochs = 30
+for epoch in range(epochs):
+    model.train()
+    total_loss = 0
+    for xb, yb in train_loader:
+        xb, yb = xb.to(device), yb.to(device)
+        preds = model(xb)
+        loss = criterion(preds, yb)
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        total_loss += loss.item()
+
+    # Validation
+    model.eval()
+    with torch.no_grad():
+        val_mae = 0
+        for xb, yb in val_loader:
+            xb, yb = xb.to(device), yb.to(device)
+            preds = model(xb)
+            val_mae += torch.abs(preds - yb).sum().item()
+
+    val_mae /= len(val_ds)
+    print(f"Epoch {epoch+1}: Train Loss = {total_loss:.4f}, Val MAE = {val_mae:.5f}")
+
+# Final evaluation on test set
+model.eval()
+with torch.no_grad():
+    test_mae = 0
+    for xb, yb in test_loader:
+        xb, yb = xb.to(device), yb.to(device)
+        preds = model(xb)
+        test_mae += torch.abs(preds - yb).sum().item()
+    test_mae /= len(test_ds)
+
+print(f"\nTest MAE: {test_mae:.5f}")
