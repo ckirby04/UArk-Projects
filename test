@@ -107,3 +107,26 @@ with torch.no_grad():
     acc_10 = within_10_percent / len(val_ds)
 
     print(f"Epoch {epoch+1}: Train Loss = {total_loss:.4f}, Val MAE = {val_mae:.5f}, MAPE = {val_mape:.2f}%, Acc@10% = {acc_10:.2%}")
+
+
+
+model.eval()
+with torch.no_grad():
+    test_mae = 0
+    test_mape = 0
+    within_10_percent = 0
+
+    for xb, yb in test_loader:
+        xb, yb = xb.to(device), yb.to(device)
+        preds = model(xb)
+
+        test_mae += torch.abs(preds - yb).sum().item()
+        mape = torch.abs((preds - yb) / (yb + 1e-8)) * 100
+        test_mape += mape.sum().item()
+        within_10_percent += ((mape <= 10).squeeze()).sum().item()
+
+    test_mae /= len(test_ds)
+    test_mape /= len(test_ds)
+    acc_10 = within_10_percent / len(test_ds)
+
+print(f"\nTest MAE: {test_mae:.5f}, MAPE: {test_mape:.2f}%, Acc@10%: {acc_10:.2%}")
